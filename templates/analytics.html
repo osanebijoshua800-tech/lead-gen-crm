@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Outreach Analytics | LeadGen CRM</title>
+    <!-- Bootstrap CSS & Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Chart.js Library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body class="bg-light">
+
+    <div class="container py-4">
+
+        <!-- Header Navigation -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h1 class="h3 fw-bold mb-1">Outreach Analytics & Reports</h1>
+                <p class="text-muted mb-0">Track email performance, reply rates, and pipeline conversion metrics.</p>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('index') }}" class="btn btn-outline-primary fw-semibold">
+                    <i class="bi bi-table me-1"></i> Dashboard View
+                </a>
+                <a href="{{ url_for('kanban_view') }}" class="btn btn-outline-secondary fw-semibold">
+                    <i class="bi bi-kanban me-1"></i> Kanban View
+                </a>
+            </div>
+        </div>
+
+        <!-- Analytics Key Metric Cards -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm p-3">
+                    <div class="text-uppercase text-muted fw-bold small">Total Outreach Sent</div>
+                    <div class="h3 fw-bold text-dark mt-2 mb-0">{{ total_outreach_sent }}</div>
+                    <div class="small text-muted mt-1">{{ total_initial_emails }} Initial / {{ total_followups_sent }}
+                        Follow-ups</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm p-3">
+                    <div class="text-uppercase text-muted fw-bold small">Replies Detected</div>
+                    <div class="h3 fw-bold text-success mt-2 mb-0">{{ total_replies_received }}</div>
+                    <div class="small text-muted mt-1">Auto-updated via IMAP</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm p-3">
+                    <div class="text-uppercase text-muted fw-bold small">Response Rate</div>
+                    <div class="h3 fw-bold text-primary mt-2 mb-0">{{ response_rate }}%</div>
+                    <div class="small text-muted mt-1">Replies / Initial Cold Emails</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm p-3">
+                    <div class="text-uppercase text-muted fw-bold small">Conversion Rate</div>
+                    <div class="h3 fw-bold text-warning mt-2 mb-0">{{ conversion_rate }}%</div>
+                    <div class="small text-muted mt-1">Qualified or Closed/Won</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hidden Data Container to pass Jinja2 variables safely to JS -->
+        <div id="analyticsData" data-initial-emails="{{ total_initial_emails }}"
+            data-followups-sent="{{ total_followups_sent }}" data-replies-received="{{ total_replies_received }}"
+            data-stages='{{ stages | tojson }}' data-stage-counts='[
+            {% for stage in stages %}
+                {{ stage_counts[stage] }}{% if not loop.last %},{% endif %}
+            {% endfor %}
+         ]'>
+        </div>
+
+        <!-- Visual Charts Row -->
+        <div class="row g-4 mb-4">
+            <!-- Outreach Volume Bar Chart -->
+            <div class="col-md-7">
+                <div class="card border-0 shadow-sm p-4">
+                    <h5 class="fw-bold mb-3"><i class="bi bi-bar-chart-line me-2"></i>Outreach Activity Breakdown</h5>
+                    <div style="height: 300px;">
+                        <canvas id="outreachBarChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pipeline Conversion Donut Chart -->
+            <div class="col-md-5">
+                <div class="card border-0 shadow-sm p-4">
+                    <h5 class="fw-bold mb-3"><i class="bi bi-pie-chart me-2"></i>Pipeline Stage Distribution</h5>
+                    <div style="height: 300px;" class="d-flex justify-content-center">
+                        <canvas id="pipelinePieChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const dataEl = document.getElementById('analyticsData');
+
+            const initialEmails = parseInt(dataEl.dataset.initialEmails || "0", 10);
+            const followupsSent = parseInt(dataEl.dataset.followupsSent || "0", 10);
+            const repliesReceived = parseInt(dataEl.dataset.repliesReceived || "0", 10);
+            const stageLabels = JSON.parse(dataEl.dataset.stages || "[]");
+            const stageCounts = JSON.parse(dataEl.dataset.stageCounts || "[]");
+
+            // 1. Outreach Activity Bar Chart
+            const ctxBar = document.getElementById('outreachBarChart').getContext('2d');
+            new Chart(ctxBar, {
+                type: 'bar',
+                data: {
+                    labels: ['Initial Cold Emails', 'Follow-up Emails', 'Replies Received'],
+                    datasets: [{
+                        label: 'Volume',
+                        data: [initialEmails, followupsSent, repliesReceived],
+                        backgroundColor: ['#0d6efd', '#ffc107', '#198754'],
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { precision: 0 } }
+                    }
+                }
+            });
+
+            // 2. Pipeline Stage Pie Chart
+            const ctxPie = document.getElementById('pipelinePieChart').getContext('2d');
+            new Chart(ctxPie, {
+                type: 'doughnut',
+                data: {
+                    labels: stageLabels,
+                    datasets: [{
+                        data: stageCounts,
+                        backgroundColor: [
+                            '#6c757d', // New
+                            '#0d6efd', // Contacted
+                            '#ffc107', // Followed-Up
+                            '#198754', // Replied
+                            '#0dcaf0', // Qualified
+                            '#20c997', // Closed/Won
+                            '#dc3545'  // Lost
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right' }
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,478 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="fw-bold m-0">Lead Generation CRM</h1>
+        <p class="text-muted m-0">Discover, qualify, and manage B2B sales leads.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#analyticsModal">
+            <i class="bi bi-graph-up me-1"></i> Analytics
+        </button>
+        <button class="btn btn-primary" id="viewToggleBtn" onclick="toggleView()">
+            <i class="bi bi-kanban me-1"></i> <span id="viewToggleText">Kanban Board View</span>
+        </button>
+        <a href="{{ url_for('export_csv') }}" class="btn btn-outline-success">
+            <i class="bi bi-download me-1"></i> Export CSV
+        </a>
+        <button class="btn btn-success fw-bold" data-bs-toggle="modal" data-bs-target="#addLeadModal">
+            <i class="bi bi-plus-lg me-1"></i> + Add Manual Lead
+        </button>
+    </div>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+{% for category, message in messages %}
+<div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+    {{ message }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endfor %}
+{% endif %}
+{% endwith %}
+
+{% if not smtp_configured %}
+<div class="alert alert-danger alert-dismissible fade show d-flex align-items-center" role="alert">
+    <div>
+        SMTP credentials not configured. Please set <strong>SMTP_USER</strong> and <strong>SMTP_PASSWORD</strong> in
+        your <code>.env</code> file.
+    </div>
+    <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<!-- Metrics Header -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm p-3">
+            <span class="text-muted fw-bold small text-uppercase">Total Saved Leads</span>
+            <h2 class="fw-bold mt-2 mb-0">{{ total_leads }}</h2>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm p-3">
+            <span class="text-muted fw-bold small text-uppercase">Hot Leads (70+)</span>
+            <h2 class="fw-bold mt-2 mb-0 text-danger">{{ hot_leads }}</h2>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm p-3">
+            <span class="text-muted fw-bold small text-uppercase">Contacted Leads</span>
+            <h2 class="fw-bold mt-2 mb-0 text-primary">{{ contacted_leads }}</h2>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm p-3">
+            <span class="text-muted fw-bold small text-uppercase">Email Availability</span>
+            <h2 class="fw-bold mt-2 mb-0 text-success">{{ email_availability }}</h2>
+        </div>
+    </div>
+</div>
+
+<!-- Search Discovery Card -->
+<div class="card bg-dark text-white p-4 border-0 shadow-sm mb-4">
+    <h5 class="fw-bold mb-3"><i class="bi bi-globe me-2"></i>Live Web Search & Lead Discovery</h5>
+    <form action="{{ url_for('search_leads') }}" method="POST" class="row g-2">
+        <div class="col-md-5">
+            <input type="text" name="niche" class="form-control form-control-lg"
+                placeholder="Target Niche (e.g. Dental Clinics, Plumbers)" required>
+        </div>
+        <div class="col-md-5">
+            <input type="text" name="location" class="form-control form-control-lg"
+                placeholder="City / Location (e.g. Austin, TX)" required>
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold">Find Leads</button>
+        </div>
+    </form>
+</div>
+
+<!-- ADVANCED SUB-FILTERS BAR -->
+<div class="card border-0 shadow-sm p-3 mb-4 bg-white">
+    <form method="GET" action="{{ url_for('index') }}" class="row g-2 align-items-center">
+        <div class="col-md-3">
+            <input type="text" name="q" class="form-control" placeholder="Search name, email, city..."
+                value="{{ search_q }}">
+        </div>
+        <div class="col-md-2">
+            <select name="score" class="form-select">
+                <option value="">All Scores</option>
+                <option value="Hot" {% if selected_score=='Hot' %}selected{% endif %}>Hot (70+)</option>
+                <option value="Warm" {% if selected_score=='Warm' %}selected{% endif %}>Warm (50-69)</option>
+                <option value="Cold" {% if selected_score=='Cold' %}selected{% endif %}>Cold (<50)< /option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <select name="status" class="form-select">
+                <option value="">All Statuses</option>
+                <option value="New" {% if selected_status=='New' %}selected{% endif %}>New</option>
+                <option value="Contacted" {% if selected_status=='Contacted' %}selected{% endif %}>Contacted</option>
+                <option value="Qualified" {% if selected_status=='Qualified' %}selected{% endif %}>Qualified</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <select name="niche" class="form-select">
+                <option value="">All Niches</option>
+                {% for cat in categories %}
+                <option value="{{ cat }}" {% if selected_niche==cat %}selected{% endif %}>{{ cat }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2 d-flex gap-1">
+            <button type="submit" class="btn btn-primary fw-bold w-100"><i class="bi bi-funnel me-1"></i>
+                Filter</button>
+            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary" title="Reset Filters"><i
+                    class="bi bi-arrow-counterclockwise"></i></a>
+        </div>
+    </form>
+</div>
+
+<!-- ==================== VIEW 1: TABLE VIEW ==================== -->
+<div id="tableView" class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Business Name</th>
+                    <th>Category</th>
+                    <th>Location</th>
+                    <th>Contact Info</th>
+                    <th>Score</th>
+                    <th>Pipeline Status</th>
+                    <th>Follow-Up</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for lead in leads %}
+                <tr>
+                    <td class="fw-bold">{{ lead.business_name }}</td>
+                    <td><span class="badge bg-secondary">{{ lead.category }}</span></td>
+                    <td>{{ lead.location }}</td>
+                    <td>
+                        <small class="d-block"><i class="bi bi-envelope me-1"></i>{{ lead.email or 'N/A' }}</small>
+                        <small class="d-block"><i class="bi bi-telephone me-1"></i>{{ lead.phone or 'N/A' }}</small>
+                    </td>
+                    <td>
+                        <span
+                            class="badge {% if lead.lead_score >= 70 %}bg-success{% elif lead.lead_score >= 50 %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+                            {{ lead.lead_score }} ({{ lead.score_label }})
+                        </span>
+                    </td>
+                    <td><span class="badge bg-info text-dark">{{ lead.status }}</span></td>
+                    <td>
+                        <span class="badge bg-light text-dark border"><i class="bi bi-calendar-event me-1"></i>{{
+                            lead.follow_up_date }}</span>
+                        <button class="btn btn-sm text-primary p-0 ms-1" data-bs-toggle="modal"
+                            data-bs-target="#rescheduleModal{{ lead.id }}" title="Reschedule Follow-Up">
+                            <i class="bi bi-pencil-square"></i>
+                        </button>
+                    </td>
+                    <td>
+                        {% if lead.status == 'Contacted' %}
+                        <button class="btn btn-sm btn-warning text-dark fw-bold" data-bs-toggle="modal"
+                            data-bs-target="#followupModal{{ lead.id }}">Follow Up</button>
+                        {% else %}
+                        <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal"
+                            data-bs-target="#emailModal{{ lead.id }}">Email</button>
+                        {% endif %}
+                    </td>
+                </tr>
+
+                <!-- Follow-Up Reschedule Modal -->
+                <div class="modal fade" id="rescheduleModal{{ lead.id }}" tabindex="-1">
+                    <div class="modal-dialog modal-sm">
+                        <div class="modal-content">
+                            <form action="{{ url_for('update_follow_up', lead_id=lead.id) }}" method="POST">
+                                <div class="modal-header">
+                                    <h6 class="modal-title fw-bold">Reschedule Follow-Up</h6>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <label class="form-label small fw-semibold">Select Date</label>
+                                    <input type="date" name="follow_up_date" class="form-control" required>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="submit" class="btn btn-primary btn-sm fw-bold w-100">Save
+                                        Date</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Initial Outreach Modal -->
+                <div class="modal fade" id="emailModal{{ lead.id }}" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <form action="{{ url_for('send_email', lead_id=lead.id) }}" method="POST">
+                                <div class="modal-header">
+                                    <h5 class="modal-title fw-bold">Outreach to {{ lead.business_name }}</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">Subject Line</label>
+                                        <input type="text" name="subject" class="form-control" required
+                                            value="Quick question regarding {{ lead.business_name }}'s growth in {{ lead.location }}">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">Message Body</label>
+                                        <textarea name="body" class="form-control" rows="8" required>Hi {{ lead.business_name }} team,
+
+I was looking at local businesses in {{ lead.location }} and noticed your work in {{ lead.category }}.
+
+We help companies like yours generate a steady stream of qualified customer leads and boost revenue without increasing your ad spend.
+
+Would you be open to a quick 5-minute chat this week to see how we can bring 10–15 new high-value clients to {{ lead.business_name }} this month?
+
+Best regards,
+{{ current_user.full_name }} | Momentum Digital</textarea>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="submit" class="btn btn-primary fw-bold w-100"><i
+                                            class="bi bi-send me-1"></i> Send High-Converting Outreach</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Follow-Up Email Modal -->
+                <div class="modal fade" id="followupModal{{ lead.id }}" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <form action="{{ url_for('send_email', lead_id=lead.id) }}" method="POST">
+                                <div class="modal-header">
+                                    <h5 class="modal-title fw-bold">Follow-Up with {{ lead.business_name }}</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">Subject Line</label>
+                                        <input type="text" name="subject" class="form-control" required
+                                            value="Re: Quick question regarding {{ lead.business_name }}'s growth in {{ lead.location }}">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">Message Body</label>
+                                        <textarea name="body" class="form-control" rows="8" required>Hi {{ lead.business_name }} team,
+
+I wanted to quickly follow up on my previous message. I know things get busy, so I'll keep this brief.
+
+We recently helped a business similar to {{ lead.business_name }} optimize their client acquisition and increase qualified leads by over 30% within 30 days.
+
+I’d love to share two quick ideas tailored specifically for your target audience in {{ lead.location }}.
+
+Do you have 5 minutes for a brief call this Thursday or Friday?
+
+Best regards,
+{{ current_user.full_name }} | Momentum Digital</textarea>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="submit" class="btn btn-warning text-dark fw-bold w-100">
+                                        <i class="bi bi-send me-1"></i> Send Follow-Up Outreach
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <tr>
+                    <td colspan="8" class="text-center py-4 text-muted">No matching leads found. Adjust your filters or
+                        discover new leads!</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ==================== VIEW 2: KANBAN BOARD VIEW ==================== -->
+<div id="kanbanView" class="row g-3 d-none">
+    <div class="col-md-4">
+        <div class="bg-light p-3 rounded-3 border">
+            <h6 class="fw-bold text-uppercase text-secondary mb-3"><i class="bi bi-circle-fill text-info me-2"></i>New
+                ({{ leads | selectattr("status", "equalto", "New") | list | length }})</h6>
+            {% for lead in leads if lead.status == 'New' or not lead.status %}
+            <div class="card border-0 shadow-sm mb-3">
+                <div class="card-body">
+                    <h6 class="fw-bold mb-1">{{ lead.business_name }}</h6>
+                    <small class="text-muted d-block mb-2">{{ lead.category }} • {{ lead.location }}</small>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span
+                            class="badge {% if lead.lead_score >= 70 %}bg-success{% else %}bg-warning text-dark{% endif %}">Score:
+                            {{ lead.lead_score }}</span>
+                        <small class="text-muted"><i class="bi bi-calendar-event me-1"></i>{{ lead.follow_up_date
+                            }}</small>
+                    </div>
+                    <button class="btn btn-sm btn-outline-primary w-100" data-bs-toggle="modal"
+                        data-bs-target="#emailModal{{ lead.id }}">Outreach Email</button>
+                </div>
+            </div>
+            {% else %}
+            <div class="text-center text-muted py-3"><small>No new leads</small></div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="bg-light p-3 rounded-3 border">
+            <h6 class="fw-bold text-uppercase text-secondary mb-3"><i
+                    class="bi bi-circle-fill text-warning me-2"></i>Contacted ({{ leads | selectattr("status",
+                "equalto", "Contacted") | list | length }})</h6>
+            {% for lead in leads if lead.status == 'Contacted' %}
+            <div class="card border-0 shadow-sm mb-3">
+                <div class="card-body">
+                    <h6 class="fw-bold mb-1">{{ lead.business_name }}</h6>
+                    <small class="text-muted d-block mb-2">{{ lead.category }} • {{ lead.location }}</small>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="badge bg-success">Score: {{ lead.lead_score }}</span>
+                        <small class="text-muted"><i class="bi bi-calendar-event me-1"></i>{{ lead.follow_up_date
+                            }}</small>
+                    </div>
+                    <button class="btn btn-sm btn-warning text-dark fw-bold w-100" data-bs-toggle="modal"
+                        data-bs-target="#followupModal{{ lead.id }}">Follow Up</button>
+                </div>
+            </div>
+            {% else %}
+            <div class="text-center text-muted py-3"><small>No contacted leads</small></div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="bg-light p-3 rounded-3 border">
+            <h6 class="fw-bold text-uppercase text-secondary mb-3"><i
+                    class="bi bi-circle-fill text-success me-2"></i>Qualified / Closed</h6>
+            {% for lead in leads if lead.status == 'Qualified' or lead.status == 'Closed' %}
+            <div class="card border-0 shadow-sm mb-3">
+                <div class="card-body">
+                    <h6 class="fw-bold mb-1">{{ lead.business_name }}</h6>
+                    <small class="text-muted d-block mb-2">{{ lead.category }} • {{ lead.location }}</small>
+                    <span class="badge bg-success mb-2">Score: {{ lead.lead_score }}</span>
+                </div>
+            </div>
+            {% else %}
+            <div class="text-center text-muted py-3"><small>No closed leads yet</small></div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- ANALYTICS MODAL -->
+<div class="modal fade" id="analyticsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold"><i class="bi bi-graph-up me-2"></i>Pipeline Analytics & Insights</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="p-3 bg-light rounded">
+                            <h6 class="fw-bold">Lead Score Distribution</h6>
+                            <ul class="list-group list-group-flush mt-2">
+                                <li
+                                    class="list-group-item d-flex justify-content-between align-items-center bg-transparent">
+                                    Hot Leads (70+) <span class="badge bg-success rounded-pill">{{ hot_leads }}</span>
+                                </li>
+                                <li
+                                    class="list-group-item d-flex justify-content-between align-items-center bg-transparent">
+                                    Total Saved Leads <span class="badge bg-primary rounded-pill">{{ total_leads
+                                        }}</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-3 bg-light rounded">
+                            <h6 class="fw-bold">Outreach Performance</h6>
+                            <ul class="list-group list-group-flush mt-2">
+                                <li
+                                    class="list-group-item d-flex justify-content-between align-items-center bg-transparent">
+                                    Contacted Leads <span class="badge bg-info text-dark rounded-pill">{{
+                                        contacted_leads }}</span>
+                                </li>
+                                <li
+                                    class="list-group-item d-flex justify-content-between align-items-center bg-transparent">
+                                    Email Availability <span class="badge bg-success rounded-pill">{{ email_availability
+                                        }}</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ADD MANUAL LEAD MODAL -->
+<div class="modal fade" id="addLeadModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('add_lead') }}" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold">+ Add New Lead Manually</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Business Name</label>
+                        <input type="text" name="business_name" class="form-control"
+                            placeholder="e.g. Acme Health Clinic" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Category / Niche</label>
+                        <input type="text" name="category" class="form-control" placeholder="e.g. Healthcare" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Location</label>
+                        <input type="text" name="location" class="form-control" placeholder="e.g. Lagos, Nigeria"
+                            required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Email Address</label>
+                        <input type="email" name="email" class="form-control" placeholder="contact@acme.com">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Phone Number</label>
+                        <input type="text" name="phone" class="form-control" placeholder="+234 800 000 0000">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Website URL</label>
+                        <input type="url" name="website" class="form-control" placeholder="https://acme.com">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-success fw-bold w-100">Save Lead</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    function toggleView() {
+        const tableView = document.getElementById('tableView');
+        const kanbanView = document.getElementById('kanbanView');
+        const toggleText = document.getElementById('viewToggleText');
+
+        if (tableView.classList.contains('d-none')) {
+            tableView.classList.remove('d-none');
+            kanbanView.classList.add('d-none');
+            toggleText.innerText = 'Kanban Board View';
+        } else {
+            tableView.classList.add('d-none');
+            kanbanView.classList.remove('d-none');
+            toggleText.innerText = 'Table View';
+        }
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ lead.business_name }} - Lead Details</title>
+    <!-- Bootstrap CSS & Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        .timeline {
+            position: relative;
+            padding-left: 20px;
+            border-left: 2px solid #dee2e6;
+        }
+
+        .timeline-item {
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .timeline-item::before {
+            content: "";
+            position: absolute;
+            left: -26px;
+            top: 4px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #0d6efd;
+        }
+    </style>
+</head>
+
+<body class="bg-light">
+
+    <div class="container py-4">
+
+        <!-- Top Navigation -->
+        <div class="mb-3">
+            <a href="{{ url_for('index') }}" class="text-decoration-none text-secondary">
+                <i class="bi bi-arrow-left me-1"></i> Back to All Leads
+            </a>
+        </div>
+
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <div class="row g-4">
+            <!-- Lead Information Panel -->
+            <div class="col-md-5">
+                <div class="card border-0 shadow-sm p-4 mb-4">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h2 class="h4 fw-bold mb-1">{{ lead.business_name }}</h2>
+                            <span class="badge bg-light text-dark border">{{ lead.category or 'Uncategorized' }}</span>
+                        </div>
+                        {% if lead.lead_score >= 70 %}
+                        <span class="badge bg-success fs-6">Hot ({{ lead.lead_score }})</span>
+                        {% elif lead.lead_score >= 45 %}
+                        <span class="badge bg-warning text-dark fs-6">Warm ({{ lead.lead_score }})</span>
+                        {% else %}
+                        <span class="badge bg-secondary fs-6">Cold ({{ lead.lead_score }})</span>
+                        {% endif %}
+                    </div>
+
+                    <hr class="my-3 text-muted">
+
+                    <div class="d-flex flex-column gap-3">
+                        <div>
+                            <div class="text-muted small fw-bold">PIPELINE STATUS</div>
+                            <span class="badge bg-info text-dark mt-1">{{ lead.status }}</span>
+                        </div>
+
+                        <div>
+                            <div class="text-muted small fw-bold">LOCATION</div>
+                            <div class="text-dark"><i class="bi bi-geo-alt me-1 text-secondary"></i>{{ lead.location or
+                                'Not specified' }}</div>
+                        </div>
+
+                        <div>
+                            <div class="text-muted small fw-bold">WEBSITE</div>
+                            {% if lead.website %}
+                            <a href="{{ lead.website }}" target="_blank" rel="noopener noreferrer"
+                                class="text-decoration-none">
+                                <i class="bi bi-globe me-1"></i>{{ lead.website }}
+                            </a>
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </div>
+
+                        <div>
+                            <div class="text-muted small fw-bold">EMAIL</div>
+                            {% if lead.email %}
+                            <a href="mailto:{{ lead.email }}" class="text-decoration-none">
+                                <i class="bi bi-envelope me-1"></i>{{ lead.email }}
+                            </a>
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </div>
+
+                        <div>
+                            <div class="text-muted small fw-bold">PHONE</div>
+                            <div class="text-dark"><i class="bi bi-telephone me-1 text-secondary"></i>{{ lead.phone or
+                                'N/A' }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Add Manual Note Card -->
+                <div class="card border-0 shadow-sm p-4">
+                    <h5 class="fw-bold mb-3"><i class="bi bi-pencil-square me-2"></i>Add User Note</h5>
+                    <form action="{{ url_for('add_note', lead_id=lead.id) }}" method="POST">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                        <div class="mb-3">
+                            <textarea name="note" class="form-control" rows="3"
+                                placeholder="e.g. Spoke on phone, requested demo next Tuesday..." required></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary fw-bold w-100">Save Note</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Activity Timeline & Audit Trail Panel -->
+            <div class="col-md-7">
+                <div class="card border-0 shadow-sm p-4">
+                    <h5 class="fw-bold mb-4"><i class="bi bi-clock-history me-2"></i>Activity Timeline & Audit Trail
+                    </h5>
+
+                    {% if logs %}
+                    <div class="timeline ms-2">
+                        {% for log in logs %}
+                        <div class="timeline-item">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <span class="badge 
+                                        {% if log.activity_type == 'Discovery' %}bg-secondary
+                                        {% elif log.activity_type == 'Email' %}bg-success
+                                        {% elif log.activity_type == 'Follow-Up' %}bg-warning text-dark
+                                        {% elif log.activity_type == 'Status Change' %}bg-info text-dark
+                                        {% elif log.activity_type == 'Note' %}bg-primary
+                                        {% else %}bg-dark{% endif %}">
+                                    {{ log.activity_type }}
+                                </span>
+                                <small class="text-muted">{{ log.created_at.strftime('%b %d, %Y at %I:%M %p') }}</small>
+                            </div>
+                            <div class="p-3 bg-light rounded border text-dark mt-2">
+                                {{ log.description }}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted my-4 text-center">No activity recorded yet for this lead.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>
